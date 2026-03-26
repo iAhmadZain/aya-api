@@ -1,0 +1,27 @@
+{
+  "name": "aya-api",
+  "version": "1.0.0",
+  "description": "Random Quran Verse API - اية من القرآن الكريم",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "build:data": "node scripts/build-fallback.js",
+    "deploy": "npm run build:data && wrangler deploy",
+    "deploy:prod": "npm run build:data && wrangler deploy --env production"
+  },
+  "keywords": [
+    "quran",
+    "api",
+    "islamic",
+    "arabic",
+    "cloudflare-workers"
+  ],
+  "author": "Ahmad Zain",
+  "license": "MIT",
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260317.1",
+    "hono": "^4.12.9",
+    "typescript": "^5.9.3",
+    "wrangler": "^4.77.0"
+  }
+}

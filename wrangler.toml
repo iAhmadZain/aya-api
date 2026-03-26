@@ -1,0 +1,12 @@
+name = "aya-api"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[build]
+command = "npm run build:data"
+
+# Production settings
+[env.production]
+name = "aya-api"
+route = { pattern = "aya.iahmadzain.me/*", zone_name = "iahmadzain.me" }
