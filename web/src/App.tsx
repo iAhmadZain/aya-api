@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { RefreshCw, Moon, Sun, Code2, ExternalLink } from 'lucide-react';
 import { getRandomAya, getAyaWithWords } from './api';
 import { VerseCard } from './components/VerseCard';
@@ -23,11 +23,13 @@ function App() {
     transliteration?: string;
   } | null>(null);
 
-  const fetchVerse = useCallback(async () => {
+  const fetchVerse = async () => {
     setLoading(true);
     setError(null);
     try {
+      console.log('Fetching verse...');
       const data = await getRandomAya(script, translation);
+      console.log('Got verse:', data.verse_key);
       
       // If showWords is enabled, fetch word data
       if (showWords) {
@@ -37,29 +39,31 @@ function App() {
         setVerse(data);
       }
     } catch (err) {
+      console.error('Fetch error:', err);
       setError('Failed to fetch verse. Please try again.');
-      console.error(err);
     } finally {
       setLoading(false);
     }
-  }, [script, translation, showWords]);
+  };
 
+  // Initial fetch on mount
   useEffect(() => {
     fetchVerse();
-  }, [fetchVerse]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
   }, [darkMode]);
 
-  // Refetch with words when showWords changes
+  // Refetch with words when showWords changes and we have a verse
   useEffect(() => {
     if (verse && showWords && !verse.images?.words) {
       getAyaWithWords(verse.surah, verse.ayah, script, translation)
         .then(setVerse)
         .catch(console.error);
     }
-  }, [showWords, verse, script, translation]);
+  }, [showWords, verse?.verse_key, script, translation]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-teal-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 transition-colors">
