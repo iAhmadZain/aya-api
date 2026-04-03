@@ -18,6 +18,17 @@ app.use('*', cors());
 // TYPES
 // ============================================================================
 
+interface QuranComWord {
+  id: number;
+  position: number;
+  text_uthmani: string;
+  text_indopak?: string;
+  page_number: number;
+  line_number: number;
+  translation?: { text: string };
+  transliteration?: { text: string };
+}
+
 interface QuranComVerse {
   id: number;
   verse_key: string;
@@ -25,11 +36,20 @@ interface QuranComVerse {
   text_indopak?: string;
   page_number?: number;
   juz_number?: number;
+  words?: QuranComWord[];
   translations?: Array<{
     id: number;
     resource_id: number;
     text: string;
   }>;
+}
+
+interface WordImage {
+  position: number;
+  text: string;
+  image_url: string;
+  translation?: string;
+  transliteration?: string;
 }
 
 interface AyaResponse {
@@ -48,7 +68,10 @@ interface AyaResponse {
   verse_key: string;
   page?: number;
   juz?: number;
-  image_url?: string;
+  images?: {
+    page_svg: string;
+    words: WordImage[];
+  };
   source: 'api' | 'fallback';
 }
 
@@ -107,12 +130,20 @@ function cleanTranslationText(text: string): string {
 }
 
 /**
- * Get verse image URL from qurancdn
+ * Get page SVG URL (full Mushaf page)
  */
-function getImageUrl(pageNumber: number, surah: number, ayah: number): string {
-  // QUL CDN has word-level images, but for verse-level we construct a reference
-  // Format: verse images are available per page in different styles
-  return `https://static.qurancdn.com/images/pages/v1/png/${pageNumber}.png`;
+function getPageSvgUrl(pageNumber: number): string {
+  // MP3Quran has reliable SVG pages (001-604)
+  const paddedPage = pageNumber.toString().padStart(3, '0');
+  return `https://www.mp3quran.net/api/quran_pages_svg/${paddedPage}.svg`;
+}
+
+/**
+ * Get word image URL from qurancdn
+ * Pattern: https://static.qurancdn.com/images/w/rq-color/{page}/{line}/{position}.png
+ */
+function getWordImageUrl(pageNumber: number, lineNumber: number, position: number): string {
+  return `https://static.qurancdn.com/images/w/rq-color/${pageNumber}/${lineNumber}/${position}.png`;
 }
 
 /**
@@ -122,29 +153,38 @@ async function getFromAPI(
   surah: number,
   ayah: number,
   scriptKey: string = 'uthmani',
-  translationKey: string = 'sahih'
+  translationKey: string = 'sahih',
+  includeWords: boolean = false
 ): Promise<AyaResponse | null> {
   try {
     const verseKey = `${surah}:${ayah}`;
-    const scriptField = SCRIPTS[scriptKey] || SCRIPTS.uthmani;
     const translation = TRANSLATIONS[translationKey] || TRANSLATIONS.sahih;
     
-    // Build fields for Arabic scripts
-    const fields = ['text_uthmani'];
-    if (scriptKey === 'indopak') {
-      fields.push('text_indopak');
+    // Use qurancdn for basic data, quran.com v4 for words (correct line numbers for images)
+    let verseData: QuranComVerse | null = null;
+    
+    if (includeWords) {
+      // Fetch from quran.com v4 for correct line numbers
+      const v4Url = `https://api.quran.com/api/v4/verses/by_key/${verseKey}?translations=${translation.id}&words=true&word_fields=text_uthmani,text_indopak&fields=text_uthmani,text_indopak,page_number,juz_number`;
+      const v4Res = await fetch(v4Url, { headers: { 'Accept': 'application/json' } });
+      
+      if (v4Res.ok) {
+        const v4Data = await v4Res.json() as { verse: QuranComVerse };
+        verseData = v4Data.verse;
+      }
+    } else {
+      // Use qurancdn for basic requests (faster, more reliable)
+      const url = `https://api.qurancdn.com/api/qdc/verses/by_key/${verseKey}?translations=${translation.id}&fields=text_uthmani,text_indopak`;
+      const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+      
+      if (res.ok) {
+        const data = await res.json() as { verse: QuranComVerse };
+        verseData = data.verse;
+      }
     }
     
-    const url = `https://api.qurancdn.com/api/qdc/verses/by_key/${verseKey}?translations=${translation.id}&fields=${fields.join(',')}`;
-    
-    const res = await fetch(url, {
-      headers: { 'Accept': 'application/json' }
-    });
-    
-    if (!res.ok) return null;
-    
-    const data = await res.json() as { verse: QuranComVerse };
-    const verse = data.verse;
+    if (!verseData) return null;
+    const verse = verseData;
     
     // Get Arabic text based on script
     let arabicText = verse.text_uthmani;
@@ -180,10 +220,27 @@ async function getFromAPI(
     // Add page/juz if available
     if (verse.page_number) {
       result.page = verse.page_number;
-      result.image_url = getImageUrl(verse.page_number, surah, ayah);
     }
     if (verse.juz_number) {
       result.juz = verse.juz_number;
+    }
+    
+    // Add word images if words were fetched
+    if (includeWords && verse.words && verse.page_number) {
+      const wordImages: WordImage[] = verse.words
+        .filter(w => w.line_number) // Only actual words, not end markers
+        .map(w => ({
+          position: w.position,
+          text: scriptKey === 'indopak' && w.text_indopak ? w.text_indopak : w.text_uthmani,
+          image_url: getWordImageUrl(verse.page_number!, w.line_number, w.position),
+          translation: w.translation?.text,
+          transliteration: w.transliteration?.text
+        }));
+      
+      result.images = {
+        page_svg: getPageSvgUrl(verse.page_number),
+        words: wordImages
+      };
     }
     
     return result;
@@ -257,10 +314,11 @@ app.get('/', (c) => {
   return c.json({
     name: 'Aya API',
     description: 'Quran Verse Service with Multiple Translations & Scripts',
-    version: '2.0.0',
+    version: '2.1.0',
     endpoints: {
       random: '/api/aya/random',
       specific: '/api/aya/:surah/:ayah',
+      words: '/api/aya/:surah/:ayah/words',
       image: '/api/aya/:surah/:ayah/image',
       surah: '/api/surah/:id',
       translations: '/api/translations',
@@ -346,7 +404,36 @@ app.get('/api/aya/:surah/:ayah', async (c) => {
   return c.json(fallbackResult);
 });
 
-// Image endpoint - returns image URL
+// Words endpoint - returns verse with word-by-word breakdown and images
+// GET /api/aya/:surah/:ayah/words?script=uthmani&translation=haleem
+app.get('/api/aya/:surah/:ayah/words', async (c) => {
+  const surah = parseInt(c.req.param('surah'));
+  const ayah = parseInt(c.req.param('ayah'));
+  const script = c.req.query('script') || 'uthmani';
+  const translation = c.req.query('translation') || 'sahih';
+  
+  if (isNaN(surah) || isNaN(ayah) || surah < 1 || surah > 114) {
+    return c.json({ error: 'Invalid surah or ayah number' }, 400);
+  }
+  
+  // Fetch with words included
+  const apiResult = await getFromAPI(surah, ayah, script, translation, true);
+  
+  if (apiResult) {
+    return c.json(apiResult);
+  }
+  
+  // Fallback doesn't have word images
+  const fallbackResult = getSpecificFromFallback(surah, ayah, translation);
+  
+  if (!fallbackResult) {
+    return c.json({ error: 'Ayah not found' }, 404);
+  }
+  
+  return c.json(fallbackResult);
+});
+
+// Image endpoint - returns image URLs for a verse
 // GET /api/aya/:surah/:ayah/image
 app.get('/api/aya/:surah/:ayah/image', async (c) => {
   const surah = parseInt(c.req.param('surah'));
@@ -356,38 +443,52 @@ app.get('/api/aya/:surah/:ayah/image', async (c) => {
     return c.json({ error: 'Invalid surah or ayah number' }, 400);
   }
   
-  // Fetch verse to get page number
-  const verseKey = `${surah}:${ayah}`;
+  // Fetch verse with words to get image URLs
+  const apiResult = await getFromAPI(surah, ayah, 'uthmani', 'sahih', true);
   
-  try {
-    const res = await fetch(
-      `https://api.quran.com/api/v4/verses/by_key/${verseKey}?fields=page_number`,
-      { headers: { 'Accept': 'application/json' } }
-    );
-    
-    if (!res.ok) {
-      return c.json({ error: 'Verse not found' }, 404);
-    }
-    
-    const data = await res.json() as { verse: { page_number: number } };
-    const pageNumber = data.verse.page_number;
-    
+  if (apiResult && apiResult.page && apiResult.images) {
     return c.json({
       surah,
       ayah,
-      verse_key: verseKey,
-      page: pageNumber,
+      verse_key: `${surah}:${ayah}`,
+      page: apiResult.page,
+      juz: apiResult.juz,
       images: {
-        // Page-level images (full page containing the verse)
-        page_png: `https://static.qurancdn.com/images/pages/v1/png/${pageNumber}.png`,
-        page_v2: `https://static.qurancdn.com/images/w/rq-color/page${pageNumber}.png`,
-        // Word-by-word images CDN pattern
-        words_base_url: `https://static.qurancdn.com/images/w/rq-color/${pageNumber}/`
+        // Full page SVG from mp3quran
+        page_svg: apiResult.images.page_svg,
+        // Word-by-word PNGs from qurancdn
+        words: apiResult.images.words
       }
     });
-  } catch (e) {
-    return c.json({ error: 'Failed to fetch verse info' }, 500);
   }
+  
+  // If API fails, at least return page SVG based on verse lookup
+  try {
+    const res = await fetch(
+      `https://api.quran.com/api/v4/verses/by_key/${surah}:${ayah}?fields=page_number`,
+      { headers: { 'Accept': 'application/json' } }
+    );
+    
+    if (res.ok) {
+      const data = await res.json() as { verse: { page_number: number } };
+      const pageNumber = data.verse.page_number;
+      
+      return c.json({
+        surah,
+        ayah,
+        verse_key: `${surah}:${ayah}`,
+        page: pageNumber,
+        images: {
+          page_svg: getPageSvgUrl(pageNumber),
+          words: [] // No word images available
+        }
+      });
+    }
+  } catch (e) {
+    console.error('Image fetch failed:', e);
+  }
+  
+  return c.json({ error: 'Failed to fetch verse images' }, 500);
 });
 
 // Get surah info and all verses
@@ -405,8 +506,7 @@ app.get('/api/surah/:id', async (c) => {
   
   // Try to fetch from API
   try {
-    const scriptField = SCRIPTS[script] || SCRIPTS.uthmani;
-    const url = `https://api.qurancdn.com/api/qdc/verses/by_chapter/${surahId}?translations=${translationInfo.id}&fields=${scriptField}&per_page=300`;
+    const url = `https://api.qurancdn.com/api/qdc/verses/by_chapter/${surahId}?translations=${translationInfo.id}&fields=text_uthmani,text_indopak&per_page=300`;
     
     const res = await fetch(url, {
       headers: { 'Accept': 'application/json' }
@@ -487,6 +587,10 @@ app.get('/api/info', (c) => {
       primary: 'quran.com / qurancdn.com API',
       fallback: 'Bundled data (risan/quran-json)'
     },
+    image_sources: {
+      page_svg: 'mp3quran.net (604 pages)',
+      word_png: 'static.qurancdn.com (word-by-word)'
+    },
     scripts: Object.keys(SCRIPTS),
     translations: Object.entries(TRANSLATIONS).map(([k, v]) => ({
       id: k,
@@ -496,7 +600,8 @@ app.get('/api/info', (c) => {
       'Multiple Arabic scripts (Uthmani, IndoPak)',
       'Multiple English translations',
       'Page/Juz information',
-      'Image URLs for verses'
+      'Word-by-word images',
+      'Full page SVG images'
     ]
   });
 });
