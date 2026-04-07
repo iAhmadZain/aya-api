@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { RefreshCw, Moon, Sun, Code2, ExternalLink, Globe } from 'lucide-react';
-import { getRandomAya, getAyaWithWords } from './api';
+import { getRandomAya, getAya, getAyaWithWords } from './api';
 import { VerseCard } from './components/VerseCard';
 import { WordModal } from './components/WordModal';
 import { Settings } from './components/Settings';
@@ -41,15 +41,9 @@ function App() {
     setLoading(true);
     setError(null);
     try {
-      let data;
-      if (specific) {
-        const url = `https://api.getaya.live/api/aya/${specific.surah}/${specific.ayah}?script=${script}&translation=${translation}`;
-        const response = await fetch(url);
-        if (!response.ok) throw new Error('Failed to fetch specific verse');
-        data = await response.json();
-      } else {
-        data = await getRandomAya(script, translation);
-      }
+      const data = specific
+        ? await getAya(specific.surah, specific.ayah, script, translation)
+        : await getRandomAya(script, translation);
 
       if (showWords) {
         const wordsData = await getAyaWithWords(data.surah, data.ayah, script, translation);

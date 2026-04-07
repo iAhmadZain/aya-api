@@ -8,7 +8,6 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import fallbackData from './fallback-data.json';
-import ogImageBase64 from './og-image-base64.txt';
 
 const app = new Hono();
 
@@ -157,10 +156,6 @@ function getPageSvgUrl(pageNumber: number): string {
   return `https://www.mp3quran.net/api/quran_pages_svg/${paddedPage}.svg`;
 }
 
-/**
- * Get word image URL - proxied through this API to avoid CORS and black PNG issues
- * Uses relative path; the image proxy endpoint will fetch from qurancdn and serve
- */
 function getWordImageUrl(pageNumber: number, lineNumber: number, position: number): string {
   return `/api/image/word/${pageNumber}/${lineNumber}/${position}`;
 }
@@ -701,24 +696,35 @@ app.get('/api/info', (c) => {
 // OG IMAGE - Dynamic social preview
 // ============================================================================
 
+function getVersePreview(surah: number, ayah: number) {
+  const chapterInfo = chapters[surah.toString()];
+  const fallback = fallbackVerses.find(v => v.s === surah && v.v === ayah);
+
+  if (!chapterInfo || !fallback) {
+    return null;
+  }
+
+  return {
+    chapterInfo,
+    arabicText: fallback.a,
+    translationText: fallback.e,
+    surahName: chapterInfo.transliteration || `Surah ${surah}`,
+    surahNameArabic: chapterInfo.name || '',
+  };
+}
+
 app.get('/api/og/:surah/:ayah', (c) => {
   const surah = parseInt(c.req.param('surah')) || 1;
   const ayah = parseInt(c.req.param('ayah')) || 1;
 
-  const chapterInfo = chapters[surah.toString()];
-  let arabicText = 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ';
-  let translationText = 'In the name of Allah, the Entirely Merciful, the Especially Merciful.';
-
-  const fallback = fallbackVerses.find(v => v.s === surah && v.v === ayah);
-  if (fallback) {
-    arabicText = fallback.a;
-    translationText = fallback.e;
+  if (isNaN(surah) || isNaN(ayah) || surah < 1 || surah > 114) {
+    return c.json({ error: 'Invalid verse reference' }, 400);
   }
 
-  if (arabicText.length > 100) arabicText = arabicText.substring(0, 100) + '...';
-  if (translationText.length > 150) translationText = translationText.substring(0, 150) + '...';
-
-  const surahName = chapterInfo?.transliteration || `Surah ${surah}`;
+  const preview = getVersePreview(surah, ayah);
+  if (!preview) {
+    return c.json({ error: 'Ayah not found' }, 404);
+  }
 
   const svg = `
 <svg width="1200" height="630" xmlns="http://www.w3.org/2000/svg">
@@ -734,12 +740,12 @@ app.get('/api/og/:surah/:ayah', (c) => {
   <text x="110" y="125" font-size="32" fill="white" text-anchor="middle" font-family="Arial, sans-serif">آ</text>
   <text x="160" y="115" font-size="24" font-weight="bold" fill="#1f2937" font-family="Arial, sans-serif">Aya</text>
   <text x="160" y="135" font-size="14" fill="#6b7280" font-family="Arial, sans-serif">Quran Verse API</text>
-  <text x="600" y="200" font-size="18" fill="#059669" text-anchor="middle" font-family="Arial, sans-serif">${escapeXml(surahName)} • Ayah ${ayah}</text>
+  <text x="600" y="200" font-size="18" fill="#059669" text-anchor="middle" font-family="Arial, sans-serif">${escapeXml(preview.surahName)} • Ayah ${ayah}</text>
   <foreignObject x="120" y="230" width="960" height="120">
-    <div xmlns="http://www.w3.org/1999/xhtml" style="font-family: 'Noto Naskh Arabic', 'Amiri', serif; font-size: 42px; color: #1f2937; text-align: center; line-height: 1.5; direction: rtl; unicode-bidi: bidi-override;">${escapeXml(arabicText)}</div>
+    <div xmlns="http://www.w3.org/1999/xhtml" style="font-family: 'Noto Naskh Arabic', 'Amiri', serif; font-size: 42px; color: #1f2937; text-align: center; line-height: 1.5; direction: rtl; unicode-bidi: bidi-override;">${escapeXml(preview.arabicText)}</div>
   </foreignObject>
   <foreignObject x="140" y="390" width="920" height="90">
-    <div xmlns="http://www.w3.org/1999/xhtml" style="font-family: Arial, sans-serif; font-size: 20px; color: #4b5563; text-align: center; line-height: 1.5;">${escapeXml(translationText)}</div>
+    <div xmlns="http://www.w3.org/1999/xhtml" style="font-family: Arial, sans-serif; font-size: 20px; color: #4b5563; text-align: center; line-height: 1.5;">${escapeXml(preview.translationText)}</div>
   </foreignObject>
   <text x="600" y="540" font-size="16" fill="#9ca3af" text-anchor="middle" font-family="Arial, sans-serif">getaya.live</text>
 </svg>`;
@@ -753,82 +759,66 @@ app.get('/api/og/:surah/:ayah', (c) => {
   });
 });
 
-// Serve verse-specific static OG PNG ONLY for 2:255 ( Ayat Al-Kursi )
-// ALL other verses: use Cloudflare Browser Rendering for dynamic screenshots
 app.get('/api/og-image/:surah/:ayah', async (c) => {
   const surah = parseInt(c.req.param('surah')) || 1;
   const ayah = parseInt(c.req.param('ayah')) || 1;
+
   if (isNaN(surah) || isNaN(ayah) || surah < 1 || surah > 114) {
     return c.json({ error: 'Invalid verse reference' }, 400);
   }
-  // Only 2:255 gets the pre-generated static image (fast, cached)
-  if (surah === 2 && ayah === 255) {
-    try {
-      const staticRes = await fetch('https://getaya.live/og/2-255.png');
-      if (staticRes.ok) {
-        const buffer = await staticRes.arrayBuffer();
-        return new Response(buffer, {
-          headers: {
-            'Content-Type': 'image/png',
-            'Cache-Control': 'public, max-age=604800, stale-while-revalidate=86400',
-            'Content-Disposition': `inline; filename="aya-${surah}-${ayah}.png"`
-          }
-        });
-      }
-    } catch (e) { /* fall through */ }
-  }
-  // Dynamic: use Cloudflare Browser Rendering with retry for any verse
-  const verseUrl = `https://getaya.live/v/${surah}/${ayah}`;
-  const accountId = (c.env as any).CLOUDFLARE_ACCOUNT_ID;
-  const apiToken = (c.env as any).CLOUDFLARE_API_TOKEN;
-  const brUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/browser-rendering/screenshot`;
 
-  for (let attempt = 0; attempt < 3; attempt++) {
-    if (attempt > 0) await new Promise(r => setTimeout(r, 500 * attempt));
-    try {
-      const screenshotRes = await fetch(brUrl, {
+  const preview = getVersePreview(surah, ayah);
+  if (!preview) {
+    return c.json({ error: 'Ayah not found' }, 404);
+  }
+
+  const accountId = (c.env as { CLOUDFLARE_ACCOUNT_ID?: string }).CLOUDFLARE_ACCOUNT_ID;
+  const apiToken = (c.env as { CLOUDFLARE_API_TOKEN?: string }).CLOUDFLARE_API_TOKEN;
+
+  if (accountId && apiToken) {
+    const screenshotRes = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${accountId}/browser-rendering/screenshot`,
+      {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${apiToken}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          url: verseUrl,
+          url: `https://api.getaya.live/v/${surah}/${ayah}`,
           viewport: { width: 1200, height: 630 },
-          // Give page time to load fonts before screenshot
-          preferences: { powerPreference: 'high-performance' }
-        })
-      });
-      if (screenshotRes.status === 429 || screenshotRes.status === 503) {
-        console.log(`OG: attempt ${attempt+1} rate-limited, retrying...`);
-        continue;
+          gotoOptions: { waitUntil: 'networkidle0', timeout: 10000 },
+          screenshotOptions: { type: 'png' },
+        }),
       }
-      if (screenshotRes.ok) {
-        const pngBuffer = await screenshotRes.arrayBuffer();
-        if (pngBuffer.byteLength > 10000) {
-          console.log(`OG: got ${pngBuffer.byteLength} bytes (attempt ${attempt+1})`);
-          return new Response(pngBuffer, {
-            headers: {
-              'Content-Type': 'image/png',
-              'Cache-Control': 'public, max-age=604800, stale-while-revalidate=86400',
-              'Content-Disposition': `inline; filename="aya-${surah}-${ayah}.png"`
-            }
-          });
-        }
-        console.log(`OG: attempt ${attempt+1} got too small response (${pngBuffer.byteLength} bytes), retrying...`);
+    );
+
+    if (screenshotRes.ok) {
+      const pngBuffer = await screenshotRes.arrayBuffer();
+      if (pngBuffer.byteLength > 10000) {
+        return new Response(pngBuffer, {
+          headers: {
+            'Content-Type': 'image/png',
+            'Cache-Control': 'public, max-age=604800, stale-while-revalidate=86400',
+            'Content-Disposition': `inline; filename="aya-${surah}-${ayah}.png"`,
+          },
+        });
       }
-    } catch (e) {
-      console.error(`OG: attempt ${attempt+1} failed:`, (e as Error).message);
     }
+
+    console.error('OG screenshot failed:', screenshotRes.status, await screenshotRes.text());
   }
-  // Fallback: PNG fallback (always PNG - never SVG for OG images)
-  // Serve a simple branded fallback PNG so social media always gets a valid image
-  const bytes = Uint8Array.from(atob(ogImageBase64.trim()), c => c.charCodeAt(0));
-  return new Response(bytes, {
+
+  const svgUrl = new URL(`/api/og/${surah}/${ayah}`, c.req.url);
+  const svgRes = await fetch(svgUrl.toString());
+  const svg = await svgRes.text();
+
+  return new Response(svg, {
     headers: {
-      'Content-Type': 'image/png',
-      'Cache-Control': 'public, max-age=604800'
-    }
+      'Content-Type': 'image/svg+xml; charset=utf-8',
+      'Cache-Control': 'public, max-age=86400',
+      'Content-Disposition': `inline; filename="aya-${surah}-${ayah}.svg"`,
+    },
   });
 });
 
