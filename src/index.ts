@@ -142,6 +142,15 @@ function getPageSvgUrl(pageNumber: number): string {
  * Get word image URL from qurancdn
  * Pattern: https://static.qurancdn.com/images/w/rq-color/{page}/{line}/{position}.png
  */
+function escapeXml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
 function getWordImageUrl(pageNumber: number, lineNumber: number, position: number): string {
   return `https://static.qurancdn.com/images/w/rq-color/${pageNumber}/${lineNumber}/${position}.png`;
 }
@@ -609,6 +618,84 @@ app.get('/api/info', (c) => {
 // Fallback only endpoint (for testing)
 app.get('/api/aya/random/fallback', (c) => {
   return c.json(getFromFallback());
+});
+
+// ============================================================================
+// OG IMAGE - Dynamic social preview
+// ============================================================================
+
+app.get('/api/og/:surah/:ayah', (c) => {
+  const surah = parseInt(c.req.param('surah')) || 1;
+  const ayah = parseInt(c.req.param('ayah')) || 1;
+
+  const chapterInfo = chapters[surah.toString()];
+  let arabicText = 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ';
+  let translationText = 'In the name of Allah, the Entirely Merciful, the Especially Merciful.';
+
+  const fallback = fallbackVerses.find(v => v.s === surah && v.v === ayah);
+  if (fallback) {
+    arabicText = fallback.a;
+    translationText = fallback.e;
+  }
+
+  if (arabicText.length > 100) arabicText = arabicText.substring(0, 100) + '...';
+  if (translationText.length > 150) translationText = translationText.substring(0, 150) + '...';
+
+  const surahName = chapterInfo?.transliteration || `Surah ${surah}`;
+
+  const svg = `
+<svg width="1200" height="630" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ecfdf5"/>
+      <stop offset="100%" style="stop-color:#f0fdfa"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect x="40" y="40" width="1120" height="550" rx="24" fill="white" stroke="#d1fae5" stroke-width="2"/>
+  <rect x="80" y="80" width="60" height="60" rx="12" fill="#059669"/>
+  <text x="110" y="125" font-size="32" fill="white" text-anchor="middle" font-family="Arial, sans-serif">آ</text>
+  <text x="160" y="115" font-size="24" font-weight="bold" fill="#1f2937" font-family="Arial, sans-serif">Aya</text>
+  <text x="160" y="135" font-size="14" fill="#6b7280" font-family="Arial, sans-serif">Quran Verse API</text>
+  <text x="600" y="200" font-size="18" fill="#059669" text-anchor="middle" font-family="Arial, sans-serif">${escapeXml(surahName)} • Ayah ${ayah}</text>
+  <foreignObject x="120" y="230" width="960" height="120">
+    <div xmlns="http://www.w3.org/1999/xhtml" style="font-family: 'Noto Naskh Arabic', 'Amiri', serif; font-size: 42px; color: #1f2937; text-align: center; line-height: 1.5; direction: rtl; unicode-bidi: bidi-override;">${escapeXml(arabicText)}</div>
+  </foreignObject>
+  <foreignObject x="140" y="390" width="920" height="90">
+    <div xmlns="http://www.w3.org/1999/xhtml" style="font-family: Arial, sans-serif; font-size: 20px; color: #4b5563; text-align: center; line-height: 1.5;">${escapeXml(translationText)}</div>
+  </foreignObject>
+  <text x="600" y="540" font-size="16" fill="#9ca3af" text-anchor="middle" font-family="Arial, sans-serif">getaya.live</text>
+</svg>`;
+
+  return new Response(svg, {
+    headers: {
+      'Content-Type': 'image/svg+xml; charset=utf-8',
+      'Cache-Control': 'public, max-age=86400',
+      'Content-Disposition': 'inline; filename="aya-og.svg"'
+    }
+  });
+});
+
+app.get('/api/og-image/:surah/:ayah', async (c) => {
+  const surah = parseInt(c.req.param('surah')) || 1;
+  const ayah = parseInt(c.req.param('ayah')) || 1;
+  const svgUrl = new URL(`/api/og/${surah}/${ayah}`, c.req.url).toString();
+
+  const res = await fetch(svgUrl, {
+    headers: {
+      'Accept': 'image/svg+xml'
+    }
+  });
+
+  const svg = await res.text();
+
+  return new Response(svg, {
+    headers: {
+      'Content-Type': 'image/svg+xml; charset=utf-8',
+      'Cache-Control': 'public, max-age=86400',
+      'Content-Disposition': 'inline; filename="aya-og.svg"'
+    }
+  });
 });
 
 export default app;
