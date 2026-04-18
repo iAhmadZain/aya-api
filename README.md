@@ -6,8 +6,8 @@ A simple, fast API that returns random Quran verses with Arabic text, multiple t
 
 ## Live Demo
 
-🌐 **Website:** https://aya-ejf.pages.dev  
-🔌 **API:** https://aya-api.iahmadzain.workers.dev
+🌐 **Website:** https://getaya.live  
+🔌 **API:** https://api.getaya.live
 
 ## Features
 
@@ -22,13 +22,13 @@ A simple, fast API that returns random Quran verses with Arabic text, multiple t
 
 ```bash
 # Get a random verse
-curl https://aya-api.iahmadzain.workers.dev/api/aya/random
+curl https://api.getaya.live/api/aya/random
 
 # Get specific verse with translation
-curl "https://aya-api.iahmadzain.workers.dev/api/aya/2/255?translation=haleem"
+curl "https://api.getaya.live/api/aya/2/255?translation=haleem"
 
 # Get verse with word-by-word images
-curl https://aya-api.iahmadzain.workers.dev/api/aya/1/1/words
+curl https://api.getaya.live/api/aya/1/1/words
 ```
 
 ## Endpoints

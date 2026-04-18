@@ -23,5 +23,8 @@
     "hono": "^4.12.9",
     "typescript": "^5.9.3",
     "wrangler": "^4.77.0"
+  },
+  "dependencies": {
+    "workers-og": "^0.0.27"
   }
 }

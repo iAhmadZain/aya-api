@@ -8,6 +8,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import fallbackData from './fallback-data.json';
+import ogImageBase64 from './og-image-base64.txt';
 
 const app = new Hono();
 
@@ -670,20 +671,265 @@ app.get('/api/og/:surah/:ayah', (c) => {
   return new Response(svg, {
     headers: {
       'Content-Type': 'image/svg+xml; charset=utf-8',
-      'Cache-Control': 'public, max-age=86400',
+      'Cache-Control': 'public, max-age=604800, stale-while-revalidate=86400',
       'Content-Disposition': 'inline; filename="aya-og.svg"'
     }
   });
 });
 
-app.get('/api/og-image/:surah/:ayah', (c) => {
-  const base64Png = 'iVBORw0KGgoAAAANSUhEUgAABLAAAAJ2CAIAAADAIuwLAAAACXBIWXMAAAABAAAAAQBPJcTWAAAN+ElEQVR4nO3XoQ0AIADAMEj4/088EsEZiLUXzG7uewYAAAA963cAAAAAfxhCAACAKEMIAAAQZQgBAACiDCEAAECUIQQAAIgyhAAAAFGGEAAAIMoQAgAARBlCAACAKEMIAAAQZQgBAACiDCEAAECUIQQAAIgyhAAAAFGGEAAAIMoQAgAARBlCAACAKEMIAAAQZQgBAACiDCEAAECUIQQAAIgyhAAAAFGGEAAAIMoQAgAARBlCAACAKEMIAAAQZQgBAACiDCEAAECUIQQAAIgyhAAAAFGGEAAAIMoQAgAARBlCAACAKEMIAAAQZQgBAACiDCEAAECUIQQAAIgyhAAAAFGGEAAAIMoQAgAARBlCAACAKEMIAAAQZQgBAACiDCEAAECUIQQAAIgyhAAAAFGGEAAAIMoQAgAARBlCAACAKEMIAAAQZQgBAACiDCEAAECUIQQAAIgyhAAAAFGGEAAAIMoQAgAARBlCAACAKEMIAAAQZQgBAACiDCEAAECUIQQAAIgyhAAAAFGGEAAAIMoQAgAARBlCAACAKEMIAAAQZQgBAACiDCEAAECUIQQAAIgyhAAAAFGGEAAAIMoQAgAARBlCAACAKEMIAAAQZQgBAACiDCEAAECUIQQAAIgyhAAAAFGGEAAAIMoQAgAARBlCAACAKEMIAAAQZQgBAACiDCEAAECUIQQAAIgyhAAAAFGGEAAAIMoQAgAARBlCAACAKEMIAAAQZQgBAACiDCEAAECUIQQAAIgyhAAAAFGGEAAAIMoQAgAARBlCAACAKEMIAAAQZQgBAACiDCEAAECUIQQAAIgyhAAAAFGGEAAAIMoQAgAARBlCAACAKEMIAAAQZQgBAACiDCEAAECUIQQAAIgyhAAAAFGGEAAAIMoQAgAARBlCAACAKEMIAAAQZQgBAACiDCEAAECUIQQAAIgyhAAAAFGGEAAAIMoQAgAARBlCAACAKEMIAAAQZQgBAACiDCEAAECUIQQAAIgyhAAAAFGGEAAAIMoQAgAARBlCAACAKEMIAAAQZQgBAACiDCEAAECUIQQAAIgyhAAAAFGGEAAAIMoQAgAARBlCAACAKEMIAAAQZQgBAACiDCEAAECUIQQAAIgyhAAAAFGGEAAAIMoQAgAARBlCAACAKEMIAAAQZQgBAACiDCEAAECUIQQAAIgyhAAAAFGGEAAAIMoQAgAARBlCAACAKEMIAAAQZQgBAACiDCEAAECUIQQAAIgyhAAAAFGGEAAAIMoQAgAARBlCAACAKEMIAAAQZQgBAACiDCEAAECUIQQAAIgyhAAAAFGGEAAAIMoQAgAARBlCAACAKEMIAAAQZQgBAACiDCEAAECUIQQAAIgyhAAAAFGGEAAAIMoQAgAARBlCAACAKEMIAAAQZQgBAACiDCEAAECUIQQAAIgyhAAAAFGGEAAAIMoQAgAARBlCAACAKEMIAAAQZQgBAACiDCEAAECUIQQAAIgyhAAAAFGGEAAAIMoQAgAARBlCAACAKEMIAAAQZQgBAACiDCEAAECUIQQAAIgyhAAAAFGGEAAAIMoQAgAARBlCAACAKEMIAAAQZQgBAACiDCEAAECUIQQAAIgyhAAAAFGGEAAAIMoQAgAARBlCAACAKEMIAAAQZQgBAACiDCEAAECUIQQAAIgyhAAAAFGGEAAAIMoQAgAARBlCAACAKEMIAAAQZQgBAACiDCEAAECUIQQAAIgyhAAAAFGGEAAAIMoQAgAARBlCAACAKEMIAAAQZQgBAACiDCEAAECUIQQAAIgyhAAAAFGGEAAAIMoQAgAARBlCAACAKEMIAAAQZQgBAACiDCEAAECUIQQAAIgyhAAAAFGGEAAAIMoQAgAARBlCAACAKEMIAAAQZQgBAACiDCEAAECUIQQAAIgyhAAAAFGGEAAAIMoQAgAARBlCAACAKEMIAAAQZQgBAACiDCEAAECUIQQAAIgyhAAAAFGGEAAAIMoQAgAARBlCAACA6AMq7wQhKCo+AAAAAElFTkSuQmCC';
-  const bytes = Uint8Array.from(atob(base64Png), c => c.charCodeAt(0));
+// Serve verse-specific static OG PNG ONLY for 2:255 ( Ayat Al-Kursi )
+// ALL other verses: use Cloudflare Browser Rendering for dynamic screenshots
+app.get('/api/og-image/:surah/:ayah', async (c) => {
+  const surah = parseInt(c.req.param('surah')) || 1;
+  const ayah = parseInt(c.req.param('ayah')) || 1;
+  if (isNaN(surah) || isNaN(ayah) || surah < 1 || surah > 114) {
+    return c.json({ error: 'Invalid verse reference' }, 400);
+  }
+  // Only 2:255 gets the pre-generated static image (fast, cached)
+  if (surah === 2 && ayah === 255) {
+    try {
+      const staticRes = await fetch('https://getaya.live/og/2-255.png');
+      if (staticRes.ok) {
+        const buffer = await staticRes.arrayBuffer();
+        return new Response(buffer, {
+          headers: {
+            'Content-Type': 'image/png',
+            'Cache-Control': 'public, max-age=604800, stale-while-revalidate=86400',
+            'Content-Disposition': `inline; filename="aya-${surah}-${ayah}.png"`
+          }
+        });
+      }
+    } catch (e) { /* fall through */ }
+  }
+  // Dynamic: use Cloudflare Browser Rendering with retry for any verse
+  const verseUrl = `https://getaya.live/v/${surah}/${ayah}`;
+  const accountId = c.env.CLOUDFLARE_ACCOUNT_ID;
+  const apiToken = c.env.CLOUDFLARE_API_TOKEN;
+  const brUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/browser-rendering/screenshot`;
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) await new Promise(r => setTimeout(r, 500 * attempt));
+    try {
+      const screenshotRes = await fetch(brUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          url: verseUrl,
+          viewport: { width: 1200, height: 630 },
+          // Give page time to load fonts before screenshot
+          preferences: { powerPreference: 'high-performance' }
+        })
+      });
+      if (screenshotRes.status === 429 || screenshotRes.status === 503) {
+        console.log(`OG: attempt ${attempt+1} rate-limited, retrying...`);
+        continue;
+      }
+      if (screenshotRes.ok) {
+        const pngBuffer = await screenshotRes.arrayBuffer();
+        if (pngBuffer.byteLength > 10000) {
+          console.log(`OG: got ${pngBuffer.byteLength} bytes (attempt ${attempt+1})`);
+          return new Response(pngBuffer, {
+            headers: {
+              'Content-Type': 'image/png',
+              'Cache-Control': 'public, max-age=604800, stale-while-revalidate=86400',
+              'Content-Disposition': `inline; filename="aya-${surah}-${ayah}.png"`
+            }
+          });
+        }
+        console.log(`OG: attempt ${attempt+1} got too small response (${pngBuffer.byteLength} bytes), retrying...`);
+      }
+    } catch (e) {
+      console.error(`OG: attempt ${attempt+1} failed:`, e.message);
+    }
+  }
+  // Fallback: PNG fallback (always PNG - never SVG for OG images)
+  // Serve a simple branded fallback PNG so social media always gets a valid image
+  const bytes = Uint8Array.from(atob(ogImageBase64.trim()), c => c.charCodeAt(0));
   return new Response(bytes, {
     headers: {
       'Content-Type': 'image/png',
-      'Cache-Control': 'public, max-age=86400',
-      'Content-Disposition': 'inline; filename="aya-og.png"'
+      'Cache-Control': 'public, max-age=604800'
+    }
+  });
+});
+
+// ============================================================================
+// VERSE SHARE PAGE - Dynamic OG metadata for /v/:surah/:ayah
+// ============================================================================
+
+/**
+ * Generate proper HTML for verse share pages with dynamic OG metadata
+ * This ensures social media scrapers get the correct preview for each verse
+ */
+app.get('/v/:surah/:ayah', (c) => {
+  const surah = parseInt(c.req.param('surah')) || 1;
+  const ayah = parseInt(c.req.param('ayah')) || 1;
+
+  // Validate verse
+  if (isNaN(surah) || isNaN(ayah) || surah < 1 || surah > 114) {
+    return c.redirect('https://getaya.live');
+  }
+
+  const chapterInfo = chapters[surah.toString()];
+  const fallback = fallbackVerses.find(v => v.s === surah && v.v === ayah);
+  
+  // If verse not found, redirect to home
+  if (!fallback && !chapterInfo) {
+    return c.redirect('https://getaya.live');
+  }
+
+  const arabicText = fallback?.a || 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ';
+  const translationText = fallback?.e || 'In the name of Allah, the Entirely Merciful, the Especially Merciful.';
+  
+  // Truncate for meta descriptions
+  const translationTruncated = translationText.length > 200 ? translationText.substring(0, 200) + '...' : translationText;
+  
+  const surahName = chapterInfo?.transliteration || `Surah ${surah}`;
+  const surahNameArabic = chapterInfo?.name || '';
+  
+  // Title and description for OG tags
+  const title = `${surahName} ${surah}:${ayah} - Aya`;
+  const description = `${translationTruncated}`;
+  
+  // OG image URL - points to our dynamic PNG endpoint
+  const ogImageUrl = `https://api.getaya.live/api/og-image/${surah}/${ayah}`;
+  const canonicalUrl = `https://getaya.live/v/${surah}/${ayah}`;
+  
+  // Generate the HTML page with proper OG metadata
+  const html = `<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${escapeXml(title)}</title>
+  <meta name="description" content="${escapeXml(description)}" />
+  <link rel="canonical" href="${canonicalUrl}" />
+  
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="${canonicalUrl}" />
+  <meta property="og:title" content="${escapeXml(title)}" />
+  <meta property="og:description" content="${escapeXml(description)}" />
+  <meta property="og:image" content="${ogImageUrl}" />
+  <meta property="og:image:secure_url" content="${ogImageUrl}" />
+  <meta property="og:image:type" content="image/png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="${escapeXml(surahName)} - Ayah ${ayah}" />
+  <meta property="og:site_name" content="Aya - Quran Verse API" />
+  <meta property="og:locale" content="en_US" />
+  
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:url" content="${canonicalUrl}" />
+  <meta name="twitter:title" content="${escapeXml(title)}" />
+  <meta name="twitter:description" content="${escapeXml(description)}" />
+  <meta name="twitter:image" content="${ogImageUrl}" />
+  <meta name="twitter:image:alt" content="${escapeXml(surahName)} - Ayah ${ayah}" />
+  
+  <!-- Additional Meta -->
+  <meta name="theme-color" content="#059669" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='75' font-size='80'>آ</text></svg>" />
+  
+  <!-- Fonts for proper Arabic rendering -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <style>
+    @font-face {
+      font-family: 'Amiri';
+      src: url('https://fonts.gstatic.com/s/amiri/v30/J7aRnpd8CGxBHqUp.ttf') format('truetype');
+      font-weight: 400;
+      font-style: normal;
+    }
+    @font-face {
+      font-family: 'Amiri';
+      src: url('https://fonts.gstatic.com/s/amiri/v30/J7acnpd8CGxBHp2VkZY4.ttf') format('truetype');
+      font-weight: 700;
+      font-style: normal;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: linear-gradient(135deg, #ecfdf5 0%, #f0fdfa 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .card {
+      background: white;
+      border-radius: 24px;
+      padding: 48px 40px;
+      max-width: 680px;
+      width: 100%;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+      text-align: center;
+      border: 2px solid #d1fae5;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #059669;
+      color: white;
+      padding: 6px 16px;
+      border-radius: 20px;
+      font-size: 13px;
+      margin-bottom: 20px;
+    }
+    .surah-info {
+      color: #059669;
+      font-size: 15px;
+      margin-bottom: 20px;
+    }
+    .arabic {
+      font-family: 'Amiri', 'Noto Naskh Arabic', serif;
+      font-size: 44px;
+      line-height: 1.7;
+      color: #1f2937;
+      direction: rtl;
+      margin-bottom: 28px;
+      letter-spacing: 0.5px;
+    }
+    .translation {
+      font-size: 20px;
+      color: #4b5563;
+      line-height: 1.6;
+      margin-bottom: 0;
+      font-style: italic;
+    }
+    .footer {
+      margin-top: 24px;
+      color: #9ca3af;
+      font-size: 12px;
+    }
+  </style>
+  
+</head>
+<body>
+  <div class="card">
+    <div class="badge">
+      <span style="font-size:18px">آ</span>
+      <span>Aya — Quran Verses</span>
+    </div>
+    <div class="surah-info">${escapeXml(surahName)} ${surahNameArabic ? `(${escapeXml(surahNameArabic)})` : ''} • Ayah ${ayah}</div>
+    <div class="arabic">${escapeXml(arabicText)}</div>
+    <div class="translation">${escapeXml(translationText)}</div>
+    <div class="footer">getaya.live</div>
+  </div>
+</body>
+</html>`;
+
+  return new Response(html, {
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'public, max-age=3600',
     }
   });
 });

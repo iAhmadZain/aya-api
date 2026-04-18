@@ -37,11 +37,20 @@ function App() {
   const isRtl = lang === 'ar';
 
 
-  const fetchVerse = async () => {
+  const fetchVerse = async (specific?: { surah: number; ayah: number }) => {
     setLoading(true);
     setError(null);
     try {
-      const data = await getRandomAya(script, translation);
+      let data;
+      if (specific) {
+        const url = `https://api.getaya.live/api/aya/${specific.surah}/${specific.ayah}?script=${script}&translation=${translation}`;
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Failed to fetch specific verse');
+        data = await response.json();
+      } else {
+        data = await getRandomAya(script, translation);
+      }
+
       if (showWords) {
         const wordsData = await getAyaWithWords(data.surah, data.ayah, script, translation);
         setVerse(wordsData);
@@ -57,7 +66,18 @@ function App() {
   };
 
   useEffect(() => {
-    fetchVerse();
+    const pathMatch = window.location.pathname.match(/^\/v\/(\d+)\/(\d+)$/);
+    const params = new URLSearchParams(window.location.search);
+    const querySurah = params.get('surah');
+    const queryAyah = params.get('ayah');
+
+    if (pathMatch) {
+      fetchVerse({ surah: parseInt(pathMatch[1], 10), ayah: parseInt(pathMatch[2], 10) });
+    } else if (querySurah && queryAyah) {
+      fetchVerse({ surah: parseInt(querySurah, 10), ayah: parseInt(queryAyah, 10) });
+    } else {
+      fetchVerse();
+    }
   }, []);
 
   useEffect(() => {
@@ -155,7 +175,7 @@ function App() {
           <div className="text-center">
             <p className="text-red-500 mb-4">{error}</p>
             <button
-              onClick={fetchVerse}
+              onClick={() => fetchVerse()}
               className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-colors"
             >
               {t.tryAgain}
@@ -172,7 +192,7 @@ function App() {
             />
             
             <button
-              onClick={fetchVerse}
+              onClick={() => fetchVerse()}
               disabled={loading}
               className="mt-8 flex items-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white rounded-xl shadow-lg transition-all hover:scale-105 disabled:scale-100"
             >

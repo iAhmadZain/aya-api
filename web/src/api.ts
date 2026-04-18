@@ -1,6 +1,7 @@
 import type { AyaResponse, Translation, Script } from './types';
 
-const API_BASE = 'https://aya-api.iahmadzain.workers.dev';
+// Use explicit API origin so verse routes like /v/:surah/:ayah never break API calls
+const API_BASE = 'https://api.getaya.live';
 
 export async function getRandomAya(script = 'uthmani', translation = 'sahih'): Promise<AyaResponse> {
   const res = await fetch(`${API_BASE}/api/aya/random?script=${script}&translation=${translation}`);
