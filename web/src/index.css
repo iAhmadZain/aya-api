@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Enable dark mode via class */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --font-arabic: "Amiri", "Scheherazade New", serif;
 }
@@ -37,4 +40,11 @@
 
 .word-item:hover {
   transform: scale(1.05);
+}
+
+/* Word images have transparent backgrounds - ensure visibility in dark mode */
+.word-item img {
+  background: white;
+  border-radius: 0.25rem;
+  padding: 0.125rem;
 }

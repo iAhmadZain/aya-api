@@ -1,31 +1,54 @@
 import { useState } from 'react';
-import { Copy, Check, Share2, BookOpen } from 'lucide-react';
+import { Copy, Check, Share2, BookOpen, Code, Download } from 'lucide-react';
+import { translations, type Language } from '../i18n';
 import type { AyaResponse } from '../types';
 
 interface Props {
   verse: AyaResponse;
   showWords?: boolean;
-  onWordClick?: (word: { text: string; translation?: string; transliteration?: string }) => void;
+  onWordClick?: (word: { text: string; image_url?: string; translation?: string; transliteration?: string }) => void;
+  onEmbedClick?: () => void;
+  lang?: Language;
 }
 
-export function VerseCard({ verse, showWords = false, onWordClick }: Props) {
+export function VerseCard({ verse, showWords = false, onWordClick, onEmbedClick, lang = 'en' }: Props) {
   const [copied, setCopied] = useState(false);
+  const t = translations[lang];
 
   const copyToClipboard = async () => {
-    const text = `${verse.text_arabic}\n\n${verse.translation.text}\n\n— ${verse.surah_transliteration} ${verse.ayah}`;
+    const text = `${verse.text_arabic}\n\n${verse.translation.text}\n\n— ${verse.surah_transliteration} ${verse.ayah}\n\nhttps://getaya.live`;
     await navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
   const share = async () => {
+    const shareUrl = `https://getaya.live/v/${verse.surah}/${verse.ayah}`;
+    const shareText = `${verse.text_arabic}\n\n${verse.translation.text}\n\n— ${verse.surah_transliteration} ${verse.ayah}`;
+
     if (navigator.share) {
       await navigator.share({
-        title: `${verse.surah_transliteration} ${verse.ayah}`,
-        text: `${verse.text_arabic}\n\n${verse.translation.text}`,
-        url: window.location.href,
+        title: `${verse.surah_name} - ${verse.surah_transliteration} ${verse.ayah}`,
+        text: shareText,
+        url: shareUrl,
       });
+    } else {
+      await navigator.clipboard.writeText(`${shareText}\n\n${shareUrl}`);
     }
+  };
+
+  const downloadPng = async () => {
+    const imageUrl = `https://api.getaya.live/api/og-image/${verse.surah}/${verse.ayah}`;
+    const response = await fetch(imageUrl);
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = `aya-${verse.surah}-${verse.ayah}.png`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(objectUrl);
   };
 
   return (
@@ -38,18 +61,18 @@ export function VerseCard({ verse, showWords = false, onWordClick }: Props) {
           </div>
           <div>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              {verse.surah_transliteration} • Ayah {verse.ayah}
+              {lang === 'ar' ? verse.surah_name : verse.surah_transliteration} • {t.ayah} {verse.ayah}
             </p>
             <p className="text-xs text-gray-400 dark:text-gray-500">
-              {verse.surah_name_en} • Page {verse.page} • Juz {verse.juz}
+              {lang === 'ar' ? verse.surah_transliteration : verse.surah_name_en} • {t.page} {verse.page} • {t.juz} {verse.juz}
             </p>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-1">
           <button
             onClick={copyToClipboard}
             className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-            title="Copy"
+            title={t.copy}
           >
             {copied ? (
               <Check className="w-5 h-5 text-emerald-500" />
@@ -60,9 +83,23 @@ export function VerseCard({ verse, showWords = false, onWordClick }: Props) {
           <button
             onClick={share}
             className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-            title="Share"
+            title={t.share}
           >
             <Share2 className="w-5 h-5 text-gray-400" />
+          </button>
+          <button
+            onClick={downloadPng}
+            className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            title={t.download}
+          >
+            <Download className="w-5 h-5 text-gray-400" />
+          </button>
+          <button
+            onClick={onEmbedClick}
+            className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            title="Embed"
+          >
+            <Code className="w-5 h-5 text-gray-400" />
           </button>
         </div>
       </div>
@@ -71,27 +108,37 @@ export function VerseCard({ verse, showWords = false, onWordClick }: Props) {
       {showWords && verse.images?.words ? (
         <div className="flex flex-wrap justify-center gap-4 mb-8" dir="rtl">
           {verse.images.words
-            .filter(w => !w.text.match(/^[٠-٩]+$/)) // Filter out verse numbers
+            .filter(w => !w.text.match(/^[٠-٩]+$/))
             .map((word) => (
               <button
                 key={word.position}
                 onClick={() => onWordClick?.(word)}
-                className="word-item group flex flex-col items-center p-3 rounded-xl hover:bg-emerald-50 dark:hover:bg-emerald-900/20 cursor-pointer"
+                className="word-item group flex flex-col items-center p-3 rounded-xl hover:bg-emerald-50 dark:hover:bg-emerald-900/20 cursor-pointer transition-colors"
               >
-                <img
-                  src={word.image_url}
-                  alt={word.text}
-                  className="h-16 w-auto mb-2"
-                  loading="lazy"
-                />
-                <span className="text-xs text-gray-500 dark:text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                {word.image_url ? (
+                  <img
+                    src={word.image_url}
+                    alt={word.text}
+                    className="h-16 w-auto mb-2"
+                    loading="lazy"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.style.display = 'none';
+                      target.parentElement?.querySelector('.fallback-text')?.classList.remove('hidden');
+                    }}
+                  />
+                ) : null}
+                <span className="arabic-text text-2xl text-gray-800 dark:text-gray-100 fallback-text hidden">
+                  {word.text}
+                </span>
+                <span className="text-xs text-gray-500 dark:text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity text-center">
                   {word.translation}
                 </span>
               </button>
             ))}
         </div>
       ) : (
-        <p className="arabic-text text-4xl md:text-5xl text-center text-gray-800 dark:text-gray-100 mb-8 leading-relaxed">
+        <p className="arabic-text text-4xl md:text-5xl text-center text-gray-800 dark:text-gray-100 mb-8 leading-relaxed" dir="rtl">
           {verse.text_arabic}
         </p>
       )}
@@ -102,7 +149,7 @@ export function VerseCard({ verse, showWords = false, onWordClick }: Props) {
           {verse.translation.text}
         </p>
         <p className="text-xs text-gray-400 dark:text-gray-500 text-center mt-3">
-          Translation: {verse.translation.name}
+          {t.translation}: {verse.translation.name}
         </p>
       </div>
     </div>

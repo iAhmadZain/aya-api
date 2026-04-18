@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Settings as SettingsIcon, X } from 'lucide-react';
 import { getTranslations, getScripts } from '../api';
+import { translations, type Language } from '../i18n';
 import type { Translation, Script } from '../types';
 
 interface Props {
@@ -10,6 +11,7 @@ interface Props {
   onScriptChange: (script: string) => void;
   onTranslationChange: (translation: string) => void;
   onShowWordsChange: (show: boolean) => void;
+  lang?: Language;
 }
 
 export function Settings({
@@ -19,13 +21,15 @@ export function Settings({
   onScriptChange,
   onTranslationChange,
   onShowWordsChange,
+  lang = 'en',
 }: Props) {
   const [isOpen, setIsOpen] = useState(false);
-  const [translations, setTranslations] = useState<Translation[]>([]);
+  const [translationsList, setTranslationsList] = useState<Translation[]>([]);
   const [scripts, setScripts] = useState<Script[]>([]);
+  const t = translations[lang];
 
   useEffect(() => {
-    getTranslations().then(data => setTranslations(data.translations));
+    getTranslations().then(data => setTranslationsList(data.translations));
     getScripts().then(data => setScripts(data.scripts));
   }, []);
 
@@ -33,8 +37,8 @@ export function Settings({
     <>
       <button
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-6 right-6 p-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full shadow-lg transition-all hover:scale-105"
-        title="Settings"
+        className="fixed bottom-6 end-6 p-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full shadow-lg transition-all hover:scale-105"
+        title={t.settings}
       >
         <SettingsIcon className="w-6 h-6" />
       </button>
@@ -46,7 +50,7 @@ export function Settings({
             onClick={e => e.stopPropagation()}
           >
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100">Settings</h2>
+              <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100">{t.settings}</h2>
               <button
                 onClick={() => setIsOpen(false)}
                 className="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
@@ -59,7 +63,7 @@ export function Settings({
               {/* Script Selection */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Arabic Script
+                  {t.arabicScript}
                 </label>
                 <div className="flex gap-2">
                   {scripts.map(s => (
@@ -69,7 +73,7 @@ export function Settings({
                       className={`flex-1 py-2 px-4 rounded-lg border-2 transition-all ${
                         script === s.id
                           ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400'
-                          : 'border-gray-200 dark:border-gray-600 hover:border-emerald-300'
+                          : 'border-gray-200 dark:border-gray-600 hover:border-emerald-300 text-gray-700 dark:text-gray-300'
                       }`}
                     >
                       {s.name}
@@ -81,14 +85,14 @@ export function Settings({
               {/* Translation Selection */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  English Translation
+                  {t.translation}
                 </label>
                 <select
                   value={translation}
                   onChange={e => onTranslationChange(e.target.value)}
                   className="w-full p-3 rounded-lg border-2 border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 focus:border-emerald-500 outline-none"
                 >
-                  {translations.map(t => (
+                  {translationsList.map(t => (
                     <option key={t.id} value={t.id}>{t.name}</option>
                   ))}
                 </select>
@@ -97,8 +101,8 @@ export function Settings({
               {/* Word by Word Toggle */}
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="font-medium text-gray-700 dark:text-gray-300">Word by Word</p>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">Show individual word images</p>
+                  <p className="font-medium text-gray-700 dark:text-gray-300">{t.wordByWord}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">{t.wordByWordDesc}</p>
                 </div>
                 <button
                   onClick={() => onShowWordsChange(!showWords)}
@@ -107,7 +111,7 @@ export function Settings({
                   }`}
                 >
                   <div className={`w-5 h-5 bg-white rounded-full shadow-md transform transition-transform ${
-                    showWords ? 'translate-x-8' : 'translate-x-1'
+                    showWords ? 'translate-x-8 rtl:-translate-x-1' : 'translate-x-1 rtl:translate-x-8'
                   }`} />
                 </button>
               </div>

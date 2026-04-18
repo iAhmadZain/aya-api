@@ -1,18 +1,27 @@
 import { useState, useEffect } from 'react';
-import { RefreshCw, Moon, Sun, Code2, ExternalLink } from 'lucide-react';
+import { RefreshCw, Moon, Sun, Code2, ExternalLink, Globe } from 'lucide-react';
 import { getRandomAya, getAyaWithWords } from './api';
 import { VerseCard } from './components/VerseCard';
 import { WordModal } from './components/WordModal';
 import { Settings } from './components/Settings';
+import { APIExamples } from './components/APIExamples';
+import { EmbedModal } from './components/EmbedModal';
+import { translations, type Language } from './i18n';
 import type { AyaResponse } from './types';
 
 function App() {
   const [verse, setVerse] = useState<AyaResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [darkMode, setDarkMode] = useState(() => 
-    window.matchMedia('(prefers-color-scheme: dark)').matches
-  );
+  const [darkMode, setDarkMode] = useState(() => {
+    const saved = localStorage.getItem('darkMode');
+    if (saved !== null) return saved === 'true';
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
+  const [lang, setLang] = useState<Language>(() => {
+    const saved = localStorage.getItem('lang') as Language;
+    return saved || 'en';
+  });
   const [script, setScript] = useState('uthmani');
   const [translation, setTranslation] = useState('sahih');
   const [showWords, setShowWords] = useState(false);
@@ -22,16 +31,26 @@ function App() {
     translation?: string;
     transliteration?: string;
   } | null>(null);
+  const [showEmbed, setShowEmbed] = useState(false);
 
-  const fetchVerse = async () => {
+  const t = translations[lang];
+  const isRtl = lang === 'ar';
+
+
+  const fetchVerse = async (specific?: { surah: number; ayah: number }) => {
     setLoading(true);
     setError(null);
     try {
-      console.log('Fetching verse...');
-      const data = await getRandomAya(script, translation);
-      console.log('Got verse:', data.verse_key);
-      
-      // If showWords is enabled, fetch word data
+      let data;
+      if (specific) {
+        const url = `https://api.getaya.live/api/aya/${specific.surah}/${specific.ayah}?script=${script}&translation=${translation}`;
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Failed to fetch specific verse');
+        data = await response.json();
+      } else {
+        data = await getRandomAya(script, translation);
+      }
+
       if (showWords) {
         const wordsData = await getAyaWithWords(data.surah, data.ayah, script, translation);
         setVerse(wordsData);
@@ -40,23 +59,38 @@ function App() {
       }
     } catch (err) {
       console.error('Fetch error:', err);
-      setError('Failed to fetch verse. Please try again.');
+      setError(t.error);
     } finally {
       setLoading(false);
     }
   };
 
-  // Initial fetch on mount
   useEffect(() => {
-    fetchVerse();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const pathMatch = window.location.pathname.match(/^\/v\/(\d+)\/(\d+)$/);
+    const params = new URLSearchParams(window.location.search);
+    const querySurah = params.get('surah');
+    const queryAyah = params.get('ayah');
+
+    if (pathMatch) {
+      fetchVerse({ surah: parseInt(pathMatch[1], 10), ayah: parseInt(pathMatch[2], 10) });
+    } else if (querySurah && queryAyah) {
+      fetchVerse({ surah: parseInt(querySurah, 10), ayah: parseInt(queryAyah, 10) });
+    } else {
+      fetchVerse();
+    }
   }, []);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
+    localStorage.setItem('darkMode', String(darkMode));
   }, [darkMode]);
 
-  // Refetch with words when showWords changes and we have a verse
+  useEffect(() => {
+    document.documentElement.dir = isRtl ? 'rtl' : 'ltr';
+    document.documentElement.lang = lang;
+    localStorage.setItem('lang', lang);
+  }, [lang, isRtl]);
+
   useEffect(() => {
     if (verse && showWords && !verse.images?.words) {
       getAyaWithWords(verse.surah, verse.ayah, script, translation)
@@ -64,6 +98,10 @@ function App() {
         .catch(console.error);
     }
   }, [showWords, verse?.verse_key, script, translation]);
+
+  const toggleLang = () => {
+    setLang(lang === 'en' ? 'ar' : 'en');
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-teal-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 transition-colors">
@@ -75,18 +113,30 @@ function App() {
               <span className="text-white font-bold text-lg">آ</span>
             </div>
             <div>
-              <h1 className="text-xl font-bold text-gray-800 dark:text-white">Aya</h1>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Quran Verse API</p>
+              <h1 className="text-xl font-bold text-gray-800 dark:text-white">{t.title}</h1>
+              <p className="text-xs text-gray-500 dark:text-gray-400">{t.subtitle}</p>
             </div>
           </div>
           
           <div className="flex items-center gap-2">
+            {/* Language Toggle */}
+            <button
+              onClick={toggleLang}
+              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-1"
+              title={t.language}
+            >
+              <Globe className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+              <span className="text-xs font-medium text-gray-600 dark:text-gray-300">
+                {lang === 'en' ? 'عربي' : 'EN'}
+              </span>
+            </button>
+            
             <a
-              href="https://aya-api.iahmadzain.workers.dev"
+              href="https://api.getaya.live"
               target="_blank"
               rel="noopener noreferrer"
               className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-              title="API Documentation"
+              title="API"
             >
               <Code2 className="w-5 h-5 text-gray-600 dark:text-gray-300" />
             </a>
@@ -102,7 +152,7 @@ function App() {
             <button
               onClick={() => setDarkMode(!darkMode)}
               className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-              title="Toggle dark mode"
+              title={t.darkMode}
             >
               {darkMode ? (
                 <Sun className="w-5 h-5 text-gray-300" />
@@ -115,20 +165,20 @@ function App() {
       </header>
 
       {/* Main Content */}
-      <main className="min-h-screen flex flex-col items-center justify-center px-4 pt-24 pb-32">
+      <main className="flex flex-col items-center justify-center px-4 pt-24 pb-16 min-h-[80vh]">
         {loading ? (
           <div className="flex flex-col items-center gap-4">
             <div className="w-16 h-16 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin" />
-            <p className="text-gray-500 dark:text-gray-400">Loading verse...</p>
+            <p className="text-gray-500 dark:text-gray-400">{t.loading}</p>
           </div>
         ) : error ? (
           <div className="text-center">
             <p className="text-red-500 mb-4">{error}</p>
             <button
-              onClick={fetchVerse}
+              onClick={() => fetchVerse()}
               className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-colors"
             >
-              Try Again
+              {t.tryAgain}
             </button>
           </div>
         ) : verse ? (
@@ -137,25 +187,29 @@ function App() {
               verse={verse} 
               showWords={showWords}
               onWordClick={setSelectedWord}
+              onEmbedClick={() => setShowEmbed(true)}
+              lang={lang}
             />
             
-            {/* New Verse Button */}
             <button
-              onClick={fetchVerse}
+              onClick={() => fetchVerse()}
               disabled={loading}
               className="mt-8 flex items-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white rounded-xl shadow-lg transition-all hover:scale-105 disabled:scale-100"
             >
               <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
-              New Verse
+              {t.newVerse}
             </button>
           </>
         ) : null}
       </main>
 
+      {/* API Examples Section */}
+      <APIExamples lang={lang} />
+
       {/* Footer */}
-      <footer className="fixed bottom-0 left-0 right-0 py-4 text-center text-sm text-gray-500 dark:text-gray-400 bg-white/50 dark:bg-gray-900/50 backdrop-blur-sm">
+      <footer className="py-8 mt-16 text-center text-sm text-gray-500 dark:text-gray-400 border-t border-gray-200 dark:border-gray-700">
         <p>
-          Powered by{' '}
+          {t.poweredBy}{' '}
           <a 
             href="https://quran.com" 
             target="_blank" 
@@ -174,6 +228,17 @@ function App() {
             QUL by Tarteel
           </a>
         </p>
+        <p className="mt-2 text-xs">
+          {t.madeBy}{' '}
+          <a 
+            href="https://iahmadzain.me" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="text-emerald-600 dark:text-emerald-400 hover:underline"
+          >
+            Ahmad Zain
+          </a>
+        </p>
       </footer>
 
       {/* Settings Panel */}
@@ -184,12 +249,19 @@ function App() {
         onScriptChange={setScript}
         onTranslationChange={setTranslation}
         onShowWordsChange={setShowWords}
+        lang={lang}
       />
 
       {/* Word Modal */}
       <WordModal 
         word={selectedWord} 
         onClose={() => setSelectedWord(null)} 
+      />
+
+      {/* Embed Modal */}
+      <EmbedModal
+        verse={showEmbed ? verse : null}
+        onClose={() => setShowEmbed(false)}
       />
     </div>
   );
