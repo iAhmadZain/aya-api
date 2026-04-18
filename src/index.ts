@@ -354,10 +354,15 @@ function getSpecificFromFallback(surah: number, ayah: number, translationKey: st
  * 2. Set proper Content-Security-Policy headers
  * 3. Convert transparent PNGs to white-background PNGs so they're visible in dark mode
  */
-app.get('/api/image/word/:page/:line/:position.png', async (c) => {
+app.get('/api/image/word/:page/:line/:position', async (c) => {
   const page = c.req.param('page');
   const line = c.req.param('line');
-  const position = c.req.param('position');
+  let position = c.req.param('position');
+
+  // Strip .png extension if present
+  if (position.endsWith('.png')) {
+    position = position.slice(0, -4);
+  }
 
   const upstreamUrl = `https://static.qurancdn.com/images/w/rq-color/${page}/${line}/${position}.png`;
 
@@ -371,9 +376,6 @@ app.get('/api/image/word/:page/:line/:position.png', async (c) => {
     }
 
     const imageData = await res.arrayBuffer();
-
-    c.header('Cache-Control', 'public, max-age=604800');
-    c.header('CDN-Cache-Control', 'public, max-age=2592000');
 
     return new Response(imageData, {
       headers: {
