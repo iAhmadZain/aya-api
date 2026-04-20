@@ -162,7 +162,7 @@ function getPageSvgUrl(pageNumber: number): string {
  * Uses relative path; the image proxy endpoint will fetch from qurancdn and serve
  */
 function getWordImageUrl(pageNumber: number, lineNumber: number, position: number): string {
-  return `/api/image/word/${pageNumber}/${lineNumber}/${position}.png`;
+  return `/api/image/word/${pageNumber}/${lineNumber}/${position}`;
 }
 
 /**
@@ -359,7 +359,7 @@ app.get('/api/image/word/:page/:line/:position', async (c) => {
   const line = c.req.param('line');
   let position = c.req.param('position');
 
-  // Strip .png extension if present
+  // Strip .png extension if present (for backward compatibility)
   if (position.endsWith('.png')) {
     position = position.slice(0, -4);
   }
