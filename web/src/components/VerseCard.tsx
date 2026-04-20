@@ -119,7 +119,7 @@ export function VerseCard({ verse, showWords = false, onWordClick, onEmbedClick,
                   <img
                     src={word.image_url}
                     alt={word.text}
-                    className="h-16 w-auto mb-2"
+                    className="h-16 w-auto mb-2 bg-white rounded"
                     loading="lazy"
                     onError={(e) => {
                       const target = e.target as HTMLImageElement;
