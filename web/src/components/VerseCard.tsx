@@ -106,37 +106,38 @@ export function VerseCard({ verse, showWords = false, onWordClick, onEmbedClick,
 
       {/* Arabic Text */}
       {showWords && verse.images?.words ? (
-        <div className="flex flex-wrap justify-center gap-4 mb-8" dir="rtl">
-          {verse.images.words
-            .filter(w => !w.text.match(/^[٠-٩]+$/))
-            .map((word) => (
-              <button
-                key={word.position}
-                onClick={() => onWordClick?.(word)}
-                className="word-item group flex flex-col items-center p-3 rounded-xl hover:bg-emerald-50 dark:hover:bg-emerald-900/20 cursor-pointer transition-colors"
-              >
-                {word.image_url ? (
-                  <img
-                    src={word.image_url}
-                    alt={word.text}
-                    className="h-16 w-auto mb-2 bg-white rounded"
-                    loading="lazy"
-                    onError={(e) => {
-                      const target = e.target as HTMLImageElement;
-                      target.style.display = 'none';
-                      target.parentElement?.querySelector('.fallback-text')?.classList.remove('hidden');
-                    }}
-                  />
-                ) : null}
-                <span className="arabic-text text-2xl text-gray-800 dark:text-gray-100 fallback-text hidden">
-                  {word.text}
-                </span>
-                <span className="text-xs text-gray-500 dark:text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity text-center">
-                  {word.translation}
-                </span>
-              </button>
-            ))}
-        </div>
+        <>
+          {/* Page SVG Image */}
+          {verse.page && (
+            <div className="mb-6 flex justify-center">
+              <img
+                src={`https://www.mp3quran.net/api/quran_pages_svg/${verse.page}.svg`}
+                alt={`Page ${verse.page}`}
+                className="max-w-full h-auto max-h-96 rounded-lg shadow-md bg-white"
+                loading="lazy"
+              />
+            </div>
+          )}
+          {/* Word List */}
+          <div className="flex flex-wrap justify-center gap-4 mb-8" dir="rtl">
+            {verse.images.words
+              .filter(w => !w.text.match(/^[٠-٩]+$/))
+              .map((word) => (
+                <button
+                  key={word.position}
+                  onClick={() => onWordClick?.(word)}
+                  className="word-item group flex flex-col items-center p-3 rounded-xl hover:bg-emerald-50 dark:hover:bg-emerald-900/20 cursor-pointer transition-colors"
+                >
+                  <span className="arabic-text text-2xl text-gray-800 dark:text-gray-100">
+                    {word.text}
+                  </span>
+                  <span className="text-xs text-gray-500 dark:text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity text-center">
+                    {word.translation}
+                  </span>
+                </button>
+              ))}
+          </div>
+        </>
       ) : (
         <p className="arabic-text text-4xl md:text-5xl text-center text-gray-800 dark:text-gray-100 mb-8 leading-relaxed" dir="rtl">
           {verse.text_arabic}
