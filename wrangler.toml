@@ -13,6 +13,5 @@ name = "aya-api"
 routes = [
   { pattern = "getaya.live/api/*", zone_name = "getaya.live" },
   { pattern = "getaya.live/v/*", zone_name = "getaya.live" },
-  { pattern = "api.getaya.live/*", zone_name = "getaya.live" },
-  { pattern = "aya.iahmadzain.me/*", zone_name = "iahmadzain.me" }  # Legacy
+  { pattern = "api.getaya.live/*", zone_name = "getaya.live" }
 ]

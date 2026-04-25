@@ -37,7 +37,7 @@ npm run deploy:prod   # Build data + deploy to production
 
 1. **Data build is manual** - Wrangler build command is commented out. Always run `npm run build:data` before deploy if source JSON files change.
 
-2. **Two deployment targets** - `wrangler.toml` has `[env.production]` with route `aya.iahmadzain.me/*`. Current live surface is `getaya.live` - verify routing before production changes.
+2. **Deployment targets** - `wrangler.toml` production routes are `getaya.live/api/*`, `getaya.live/v/*`, and `api.getaya.live/*`. Current live surface is `getaya.live` - verify routing before production changes.
 
 3. **No tests** - This repo has no test suite. Verify changes manually via curl against local dev server.
 
